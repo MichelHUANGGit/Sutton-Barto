@@ -40,7 +40,7 @@ class UCB:
         }
 
 if __name__ == '__main__':
-    N_BANDITS = 50
+    N_BANDITS = 2000
     N_ARMS = 10
     TIMESTEPS = 1000
 
