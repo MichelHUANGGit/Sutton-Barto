@@ -1,6 +1,7 @@
 import numpy as np
 from Bandit import Bandit
 from run_experiment import run_experiment
+import os
 
 def randargmax(a):
     return np.random.choice(np.flatnonzero(a == a.max()))
@@ -44,11 +45,14 @@ if __name__ == '__main__':
     N_ARMS = 10
     TIMESTEPS = 1000
 
-    strat1 = EpsilonGreedy(0, TIMESTEPS)
-    strat2 = EpsilonGreedy(0.01, TIMESTEPS)
-    strat3 = EpsilonGreedy(0.10, TIMESTEPS)
-    strats = [strat1, strat2, strat3]
+    strats = [
+        EpsilonGreedy(0, TIMESTEPS), 
+        EpsilonGreedy(0.01, TIMESTEPS),
+        EpsilonGreedy(0.10, TIMESTEPS),
+    ]
     colors = ['green', 'red', 'black']
+    if not(os.path.exists("figures/")):
+        os.mkdir("figures/")
 
     env = Bandit(N_ARMS)
-    run_experiment(env, strats, N_BANDITS, TIMESTEPS, colors, 'figures/Figure_2.1.png')
+    run_experiment(env, strats, N_BANDITS, TIMESTEPS, colors, 'figures/Figure_2.1.png', figsize=(8,6))
