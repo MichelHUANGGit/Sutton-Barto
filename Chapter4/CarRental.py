@@ -1,9 +1,17 @@
 import numpy as np
 from scipy.stats import poisson
-from PoissonDiff import PoissonDiff
+from PoissonDiff import TruncatedPoissonDiff
+from tqdm import tqdm
 
 class CarRental :
-
+    '''
+    Jack's Car Rental problem from the Reinforcement Learning Book (R. Sutton & A. Barto)
+    There are a few ambiguities that aren't clarified in the book :
+    - Do the returned cars take storage place in the locations when they're not available yet for rent ?
+    - If I have 0 cars in location 1 at night, but I have 2 returned cars from today that will be available for tomorrow, 
+    does that mean we can rent 2 cars, even though yesterday night, the state was 0 cars at location 1. 
+    -> these are extra nuances to consider when modeling the reward function and transitions
+    '''
     def __init__(
         self,
         price=10,
@@ -30,17 +38,21 @@ class CarRental :
         self.cumul_reward = 0
         self.discount = 1
         self.wait_return = {"loc1" : 0, "loc2" : 0}
-        self.P1_diff = PoissonDiff(poisson_lbda["return1"], poisson_lbda["rental1"])
-        self.P2_diff = PoissonDiff(poisson_lbda["return2"], poisson_lbda["rental2"])
+        # This variable represents the 2 random variables, one for each location :
+        # for loc1, it represents the random variable X-Y where X is the nb of returned cars -> Poisson(3), Y is the nb of rented cars -> Poisson(3)
+        # for loc2, it represents the random variable X-Y where X is the nb of returned cars -> Poisson(2), Y is the nb of rented cars -> Poisson(4)
+        self.plus_minus = TruncatedPoissonDiff(poisson_lbda, max_cars)
+        # self.store_transition_tensor()
+        # self.store_reward_tensor()
 
-    def legal_move(self):
+    def legal_move(self, s):
         # We can move at most 5 cars (self.max_car_move) from one location to another, 
         # but there's also no point moving 5 cars from loc1 to loc2, if loc2 already has 18 cars since the max in 20, we would lose 3 cars
         # the result is a list ranging from negative numbers to positive numbers indicating how many cars we're moving from loc1 to loc2
         # if it's negative, it means we're moving from loc2 to loc1.
         return np.arange(
-            start=-min(self.max_car_move, self.max_cars-self.state["loc1"]),
-            stop=min(self.max_car_move, self.max_cars-self.state["loc2"])+1
+            start=-min(self.max_car_move, self.max_cars-s["loc1"]),
+            stop=min(self.max_car_move, self.max_cars-s["loc2"])+1
         )
     
     def demand(self):
@@ -67,17 +79,17 @@ class CarRental :
 
         return reward
 
-    def move(self, n):
+    def move(self, a):
         '''
         Actions during the night
         '''
-        if n in self.legal_move():
+        if a in self.legal_move(self.state):
             reward = 0
             # updating state
-            self.state["loc1"] -= n
-            self.state["loc2"] += n
+            self.state["loc1"] -= a
+            self.state["loc2"] += a
             # rewards
-            reward += -n*self.move_car_cost*self.discount
+            reward += -a*self.move_car_cost*self.discount
             reward += self.demand()
             self.cumul_reward += reward
             return reward
@@ -85,20 +97,55 @@ class CarRental :
             print("Illegal Move")
             return None
         
-    def transition_function(self, state, action):
-        # transition probabilities p(s'|s,a)
-        # s' is encoded by 2 dimensions : the number of cars in loc1 and loc2, we could also use one dimension of self.max_cars^2
-        # i'm using the indexes s1 and s2 to represent s'
-        p = np.zeros(shape=(self.max_cars, self.max_cars))
-        for s1 in range(self.max_cars):
-            for s2 in range(self.max_cars):
-                # (10,10) current + (3,2) waiting - (3, 4) demand -> (9, 9)
-                p[s1,s2] = self.P1_diff.pmf(s1 - state["loc1"]) * self.P1_diff.pmf(s2 - state["loc2"])
-        return p
+    def transition_function(self, s, a):
+        # p(s'|s,a), a 21x21 array, one dim for each location
+        return self.plus_minus.transition_proba(s,a)
 
 
-    def reward_function(self, state, action):
-        pass
+    def reward_function(self, s, a):
+        # r(s,a) the average reward for taking action a in state s
+        moved_car_cost = np.abs(a) * self.move_car_cost
+
+        max_rent1 = s["loc1"]-a
+        support = np.arange(0, max_rent1)
+        loc1_reward = np.sum(poisson.pmf(support, self.poisson_lbda["rental1"]) * support * self.price)
+        truncated_support = np.arange(max_rent1, 150)
+        loc1_reward += np.sum(poisson.pmf(truncated_support, self.poisson_lbda["rental1"]) * max_rent1 * self.price)
+
+        max_rent2 = s["loc2"]+a
+        support = np.arange(0, max_rent2)
+        loc2_reward = np.sum(poisson.pmf(support, self.poisson_lbda["rental2"]) * support * self.price)
+        truncated_support = np.arange(max_rent2, 150)
+        loc2_reward += np.sum(poisson.pmf(truncated_support, self.poisson_lbda["rental2"]) * max_rent2 * self.price)
+        return loc1_reward + loc2_reward - moved_car_cost
+
+    def store_transition_tensor(self):
+        # stores p(s1',s2'|s1,s2,a) for all state-action triplets (s1,s2,a)
+        # for 20 max cars, 5 cars moved at most, this becomes a tensor of shape (21,21,21,21,11), size ~ 2M floats
+        d = self.max_cars+1
+        moves = 2*self.max_car_move+1
+        self.p = np.zeros(shape=(d,d,d,d,moves))
+        print("Storing the transition tensor...")
+        for s1 in tqdm(range(d)):
+            print("Computing the transition probabilities starting from state s1=",s1)
+            for s2 in range(d):
+                for a in self.legal_move(s={"loc1":s1, "loc2":s2}):
+                    self.p[:,:,s1,s2,a] = self.transition_function({"loc1":s1, "loc2":s2}, a)
+        print("Done.")
+
+    def store_reward_tensor(self):
+        # stores r(s1,s2,a) for all state-action triplets (s1,s2,a)
+        d = self.max_cars+1
+        moves = 2*self.max_car_move+1
+        self.r = np.zeros(shape=(d,d,moves))
+        print("Storing the reward tensor...")
+        for s1 in range(d):
+            print("Computing the reward functions starting from state s1=",s1)
+            for s2 in range(d):
+                for a in self.legal_move(s={"loc1":s1, "loc2":s2}):
+                    self.r[s1,s2,a] = self.reward_function({"loc1":s1, "loc2":s2}, a)
+        print("Done.")
+        
 
     def reset(self):
         pass
@@ -108,14 +155,14 @@ class CarRental :
 
 if __name__ == "__main__":
     JackCar = CarRental()
-    JackCar.state = {"loc1" : 10, "loc2" : 17}
+    JackCar.state = {"loc1" : 0, "loc2" : 2}
 
     # for step in range(50):
     #     print("Day : %d - cumulated rewards : %d - loc1 : %d - loc2 : %d - wait1 : %d - wait2 : %d - discount : %.2f" 
     #         %(JackCar.day, JackCar.cumul_reward, JackCar.state["loc1"], JackCar.state["loc2"], JackCar.wait_return["return1"], JackCar.wait_return["return2"], JackCar.discount))
     #     action = np.random.choice(JackCar.legal_move())
     #     JackCar.move(action)
-    p = JackCar.transition_function(JackCar.state, 0)
-    print(p.shape)
-    print(p.sum())
-    print(p[:,19])
+    # p = JackCar.transition_function(JackCar.state, 0)
+    # print(p.shape)
+    # print(p.sum())
+    print(JackCar.p.shape)
