@@ -8,7 +8,7 @@ class Racetrack:
         # 2D array, containing zeros, everywhere inside the track. 1 everywhere else. 
         # The indice (0,0) corresponds to the upper left cell.
         self.grid = grid
-        # array of tuple (each tuple is an (x,y) coordinate)
+        # array of tuple (each tuple is an (y,x) coordinate)
         self.starting_line = starting_line
         self.finish_line = finish_line
         self.max_velocity = max_velocity
