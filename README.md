@@ -1,1 +1,1 @@
-Exercises from the Reinforcement Learning Book
+Exercises from the Reinforcement Learning: An Introduction Book
