@@ -68,4 +68,5 @@ if __name__ == "__main__":
 
     env = Racetrack(grid, starting_line, finish_line, max_velocity, p_cancel)
     pi = OffPolicyMCControl(env, 1)
+    print(pi)
     
