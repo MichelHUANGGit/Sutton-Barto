@@ -33,20 +33,30 @@ class SARSA:
         
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
-    env1 = WindyGridWorld(nb_actions=8, gamma=1)
-    print("LEGAL MOVES :",env1.legal_moves)
-    algo1 = SARSA(env1)
+    nb_actions = [4,8,9,8]
+    stochaticity = [False, False, False, True]
+    n_envs = len(nb_actions)
+
+    envs = [WindyGridWorld(nb_actions=nb_actions[i], gamma=1., stochastic=stochaticity[i]) for i in range(n_envs)]
+    algorithms = [SARSA(envs[i]) for i in range(n_envs)]
     n_episodes = 170
     step_size = 0.5
     epsilon = 0.1
 
-    timesteps_per_episodes = np.zeros(shape=(n_episodes,))
-    for episode in range(1, n_episodes+1):
-        print("Episode %d"%episode)
-        algo1.run_episode(step_size=step_size, epsilon=epsilon)
-        timesteps_per_episodes[episode-1] = env1.t
+    timesteps_per_episodes = np.zeros(shape=(n_envs,n_episodes))
+    for i in range(n_envs):
+        for episode in range(1, n_episodes+1):
+            # print("Episode %d"%episode)
+            algorithms[i].run_episode(step_size=step_size, epsilon=epsilon)
+            timesteps_per_episodes[i, episode-1] = envs[i].t
 
-    cumulated_timesteps = np.cumsum(timesteps_per_episodes)
-    plt.plot(cumulated_timesteps, np.arange(1, n_episodes+1))
-    plt.axis(xmin=0, xmax=np.max(cumulated_timesteps))
+
+    cumulated_timesteps = np.cumsum(timesteps_per_episodes, axis=1)
+    fig, ax = plt.subplots()
+    for i in range(n_envs):
+        ax.plot(
+            cumulated_timesteps[i], np.arange(1, n_episodes+1), 
+            label="nb_actions=%d stochastic %r"%(envs[i].nb_actions, stochaticity[i])
+        )
+    ax.legend()
     plt.show()

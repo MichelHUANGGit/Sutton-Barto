@@ -2,12 +2,13 @@ import numpy as np
 
 class WindyGridWorld:
 
-    def __init__(self, nb_actions, gamma=1) -> None:
+    def __init__(self, nb_actions, gamma=1, stochastic=False) -> None:
         self.grid = np.zeros(shape=(7,10))
         self.starting_point = (3,0)
         self.goal = (3,7)
         self.wind = np.array([0,0,0,1,1,1,2,2,1,0])
         self.gamma = gamma
+        self.stochastic = stochastic
         self.nb_actions = nb_actions
         if nb_actions == 4:
             self.legal_moves = {"S":(1,0), "N":(-1,0), "E":(0,1), "W":(0,-1)}
@@ -28,6 +29,8 @@ class WindyGridWorld:
         movexy = self.legal_moves.get(move)
         #store wind effect
         wind = self.wind[self.pos[1]]
+        if self.stochastic:
+            wind += np.random.randint(-1,2)
         #move
         new_pos = (self.pos[0]+movexy[0], self.pos[1]+movexy[1])
         if not(self.is_oob(new_pos)):
